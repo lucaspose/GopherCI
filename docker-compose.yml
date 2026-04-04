@@ -1,0 +1,68 @@
+version: "3.9"
+
+networks:
+goci-net:
+
+volumes:
+postgres-data:
+grafana-data:
+
+services:
+
+postgres:
+image: postgres:16-alpine
+container_name: goci-postgres
+restart: always
+environment:
+POSTGRES_USER: goci
+POSTGRES_PASSWORD: goci
+POSTGRES_DB: goci
+ports:
+- "5432:5432"
+volumes:
+- postgres-data:/var/lib/postgresql/data
+networks:
+- goci-net
+healthcheck:
+test: ["CMD-SHELL", "pg_isready -U goci"]
+interval: 5s
+timeout: 5s
+retries: 5
+
+redis:
+image: redis:7-alpine
+container_name: goci-redis
+restart: always
+ports:
+- "6379:6379"
+networks:
+- goci-net
+
+prometheus:
+image: prom/prometheus
+container_name: goci-prometheus
+restart: always
+ports:
+- "9090:9090"
+volumes:
+- ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+command:
+- "--config.file=/etc/prometheus/prometheus.yml"
+networks:
+- goci-net
+
+grafana:
+image: grafana/grafana
+container_name: goci-grafana
+restart: always
+ports:
+- "3000:3000"
+volumes:
+- grafana-data:/var/lib/grafana
+- ./deploy/grafana/provisioning:/etc/grafana/provisioning
+- ./deploy/grafana/dashboards:/var/lib/grafana/dashboards
+environment:
+- GF_SECURITY_ADMIN_USER=admin
+- GF_SECURITY_ADMIN_PASSWORD=admin
+networks:
+- goci-net
