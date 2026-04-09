@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"net/mail"
 	"time"
 
 	"github.com/google/uuid"
@@ -24,13 +25,26 @@ type createUserRequest struct {
 }
 
 type createUserResponse struct {
-	ID string `json:"id"`
+	ID    string `json:"id"`
 	Email string `json:"email"`
 }
 
 type GetMeResponse struct {
-	ID string `json:"id"`
+	ID    string `json:"id"`
 	Email string `json:"email"`
+}
+
+func (c *createUserRequest) Validate() error {
+	if c.Email == "" {
+		return errors.New("email is empty")
+	}
+	if _, err := mail.ParseAddress(c.Email); err != nil {
+		return errors.New("email is invalid")
+	}
+	if len(c.Password) < 8 {
+		return errors.New("password is too short")
+	}
+	return nil
 }
 
 func NewUserHandler(repo repository.UserRepository) *UserHandler {
@@ -45,8 +59,8 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		response.WriteJSONError(w, http.StatusBadRequest, "invalid request body")
 		return
 	}
-	if input.Email == "" || input.Password == "" {
-		response.WriteJSONError(w, http.StatusBadRequest, "missing email or password")
+	if err := input.Validate(); err != nil {
+		response.WriteJSONError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
@@ -66,7 +80,7 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.WriteJSON(w, http.StatusCreated, createUserResponse{
-		ID: user.ID,
+		ID:    user.ID,
 		Email: user.Email,
 	})
 }
@@ -88,7 +102,30 @@ func (h *UserHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, GetMeResponse{
-		ID: user.ID,
+		ID:    user.ID,
 		Email: user.Email,
 	})
+}
+
+func (h *UserHandler) DeleteUser(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	userID, ok := r.Context().Value(appcontext.UserIDKey).(string)
+	if !ok {
+		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	if id != userID {
+		response.WriteJSONError(w, http.StatusForbidden, "forbidden")
+		return
+	}
+	err := h.repo.Delete(r.Context(), id)
+	if errors.Is(err, repository.ErrNotFound) {
+		response.WriteJSONError(w, http.StatusNotFound, "user not found")
+		return
+	}
+	if err != nil {
+		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
