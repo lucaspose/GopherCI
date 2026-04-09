@@ -10,6 +10,16 @@ type ErrorResponse struct {
 	Error string `json:"error"`
 }
 
+type WriterResponse struct {
+	http.ResponseWriter
+	StatusCode int
+}
+
+func (rw *WriterResponse) WriteHeader(code int) {
+	rw.StatusCode = code
+	rw.ResponseWriter.WriteHeader(code)
+}
+
 func WriteJSONError(w http.ResponseWriter, status int, message string) {
 	WriteJSON(w, status, ErrorResponse{
 		Error: message,
