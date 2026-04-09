@@ -1,68 +1,87 @@
-version: "3.9"
+name: goci-stack
 
 networks:
-goci-net:
+  goci-net:
+    driver: bridge
 
 volumes:
-postgres-data:
-grafana-data:
+  postgres-data:
+  grafana-data:
 
 services:
+  postgres:
+    user: "70:70"
+    image: postgres:16-alpine
+    container_name: goci-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: goci
+      POSTGRES_PASSWORD: goci
+      POSTGRES_DB: goci
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres/ssl/server.crt:/etc/ssl/pg/server.crt:ro
+      - ./deploy/postgres/ssl/server.key:/etc/ssl/pg/server.key:ro
+    command: >
+      postgres
+      -c ssl=on
+      -c ssl_cert_file=/etc/ssl/pg/server.crt
+      -c ssl_key_file=/etc/ssl/pg/server.key
+      -c ssl_min_protocol_version=TLSv1.2
+    networks:
+      - goci-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U goci -d goci"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
-postgres:
-image: postgres:16-alpine
-container_name: goci-postgres
-restart: always
-environment:
-POSTGRES_USER: goci
-POSTGRES_PASSWORD: goci
-POSTGRES_DB: goci
-ports:
-- "5432:5432"
-volumes:
-- postgres-data:/var/lib/postgresql/data
-networks:
-- goci-net
-healthcheck:
-test: ["CMD-SHELL", "pg_isready -U goci"]
-interval: 5s
-timeout: 5s
-retries: 5
+  redis:
+    image: redis:7-alpine
+    container_name: goci-redis
+    restart: unless-stopped
 
-redis:
-image: redis:7-alpine
-container_name: goci-redis
-restart: always
-ports:
-- "6379:6379"
-networks:
-- goci-net
+    ports:
+      - "6379:6379"
 
-prometheus:
-image: prom/prometheus
-container_name: goci-prometheus
-restart: always
-ports:
-- "9090:9090"
-volumes:
-- ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-command:
-- "--config.file=/etc/prometheus/prometheus.yml"
-networks:
-- goci-net
+    networks:
+      - goci-net
 
-grafana:
-image: grafana/grafana
-container_name: goci-grafana
-restart: always
-ports:
-- "3000:3000"
-volumes:
-- grafana-data:/var/lib/grafana
-- ./deploy/grafana/provisioning:/etc/grafana/provisioning
-- ./deploy/grafana/dashboards:/var/lib/grafana/dashboards
-environment:
-- GF_SECURITY_ADMIN_USER=admin
-- GF_SECURITY_ADMIN_PASSWORD=admin
-networks:
-- goci-net
+  prometheus:
+    image: prom/prometheus
+    container_name: goci-prometheus
+    restart: unless-stopped
+
+    ports:
+      - "9090:9090"
+
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+
+    networks:
+      - goci-net
+
+  grafana:
+    image: grafana/grafana
+    container_name: goci-grafana
+    restart: unless-stopped
+
+    ports:
+      - "3000:3000"
+
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards
+
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+
+    networks:
+      - goci-net
