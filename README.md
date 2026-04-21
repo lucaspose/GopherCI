@@ -44,15 +44,21 @@ Create a `.env` file at the root of the project:
 DATABASE_URL=postgres://goci:goci@localhost:5432/goci?sslmode=disable
 JWT_SECRET=your_jwt_secret_here
 JWT_EXPIRY=15
+JWT_REFRESH_EXPIRY=10080
 ENCRYPTION_KEY=your_32_bytes_encryption_key_here
+LOG_LEVEL=INFO
+LOG_SAMPLE_SUCCESS_EVERY=20
 ```
 
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `JWT_SECRET` | Secret used to sign JWT tokens |
-| `JWT_EXPIRY` | Token expiry in minutes |
+| `JWT_EXPIRY` | Access token expiry in minutes |
+| `JWT_REFRESH_EXPIRY` | Refresh token expiry in minutes (default: 10080 = 7 days) |
 | `ENCRYPTION_KEY` | 32-byte key for AES-256-GCM encryption of SSH keys |
+| `LOG_LEVEL` | `DEBUG`, `INFO`, `WARN`, or `ERROR` (default: `INFO`) |
+| `LOG_SAMPLE_SUCCESS_EVERY` | Sample one successful `GET/HEAD` log every N requests (default: `20`) |
 
 To generate a secure `ENCRYPTION_KEY`:
 
@@ -127,9 +133,41 @@ All protected routes require the `Authorization: Bearer <token>` header.
 ```json
 {
   "access_token": "eyJ...",
-  "expires_in": 900
+  "refresh_token": "9w2...",
+  "expires_in": 900,
+  "refresh_expires_in": 604800
 }
 ```
+
+#### `POST /auth/refresh` — Rotate token pair
+
+**Request:**
+```json
+{
+  "refresh_token": "9w2..."
+}
+```
+
+**Response `200`:**
+```json
+{
+  "access_token": "eyJ...",
+  "refresh_token": "d8k...",
+  "expires_in": 900,
+  "refresh_expires_in": 604800
+}
+```
+
+#### `POST /auth/logout` — Revoke refresh token
+
+**Request:**
+```json
+{
+  "refresh_token": "d8k..."
+}
+```
+
+**Response `204`:** No content.
 
 ---
 

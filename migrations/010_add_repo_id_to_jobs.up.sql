@@ -1,0 +1,1 @@
+ALTER TABLE jobs ADD COLUMN repo_id TEXT REFERENCES repositories(id) ON DELETE SET NULL;

@@ -20,6 +20,9 @@ func TestNewService(t *testing.T) {
 	if s.accessTokenExpiry != 15*time.Minute {
 		t.Errorf("expected expiry %v, got %v", 15*time.Minute, s.accessTokenExpiry)
 	}
+	if s.refreshTokenExpiry <= 0 {
+		t.Error("expected positive refresh token expiry")
+	}
 }
 
 func TestGetSecret(t *testing.T) {
@@ -33,6 +36,13 @@ func TestGetAccessTokenExpiry(t *testing.T) {
 	s := newTestService()
 	if s.GetAccessTokenExpiry() != 900 {
 		t.Errorf("expected 900, got %d", s.GetAccessTokenExpiry())
+	}
+}
+
+func TestGetRefreshTokenExpiry(t *testing.T) {
+	s := newTestService()
+	if s.GetRefreshTokenExpiry() <= 0 {
+		t.Errorf("expected positive refresh token expiry, got %d", s.GetRefreshTokenExpiry())
 	}
 }
 
@@ -112,6 +122,47 @@ func TestGenerateAccessToken(t *testing.T) {
 		})
 		if err == nil {
 			t.Error("expected error with wrong secret, got nil")
+		}
+	})
+}
+
+func TestGenerateRefreshToken(t *testing.T) {
+	s := newTestService()
+
+	t.Run("returns token hash and expiry", func(t *testing.T) {
+		token, hash, expiresAt, err := s.GenerateRefreshToken()
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if token == "" {
+			t.Fatal("expected non-empty token")
+		}
+		if hash == "" {
+			t.Fatal("expected non-empty hash")
+		}
+		if expiresAt.Before(time.Now()) {
+			t.Fatal("expected future expiry")
+		}
+		expectedHash := s.HashRefreshToken(token)
+		if hash != expectedHash {
+			t.Fatalf("expected hash %q, got %q", expectedHash, hash)
+		}
+	})
+
+	t.Run("different tokens produce different hashes", func(t *testing.T) {
+		tokenA, hashA, _, err := s.GenerateRefreshToken()
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		tokenB, hashB, _, err := s.GenerateRefreshToken()
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+		if tokenA == tokenB {
+			t.Fatal("expected different token values")
+		}
+		if hashA == hashB {
+			t.Fatal("expected different token hashes")
 		}
 	})
 }

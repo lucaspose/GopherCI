@@ -5,4 +5,7 @@ type Handlers struct {
 	Auth *AuthHandler
 	Job *JobHandler
 	SshKey *SSHKeyHandler
+	Repo *RepositoryHandler
+	Organizations *OrganizationHandler
+	Github *GitHubHandler
 }

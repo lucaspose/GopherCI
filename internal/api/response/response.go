@@ -20,6 +20,12 @@ func (rw *WriterResponse) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+func (rw *WriterResponse) Flush() {
+	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
 func WriteJSONError(w http.ResponseWriter, status int, message string) {
 	WriteJSON(w, status, ErrorResponse{
 		Error: message,
