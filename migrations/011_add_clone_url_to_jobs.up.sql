@@ -1,0 +1,2 @@
+ALTER TABLE jobs ADD COLUMN clone_url TEXT;
+ALTER TABLE jobs DROP COLUMN repo_id;
