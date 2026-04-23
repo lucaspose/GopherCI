@@ -71,6 +71,10 @@ func main() {
 	if githubClientSecret == "" {
 		log.Fatal("GITHUB_CLIENT_SECRET is not set")
 	}
+	githubRedirectURL := os.Getenv("GITHUB_REDIRECT_URL")
+	if githubRedirectURL == "" {
+		log.Fatal("GITHUB_REDIRECT_URL is not set")
+	}
 
 	// Secret
 	accessExpiry := time.Duration(expiryInt) * time.Minute
@@ -96,7 +100,7 @@ func main() {
 	sshHandler := handler.NewSSHKeyHandler(sshRepo, encryptionKey)
 	repoHandler := handler.NewRepositoryHandler(repoRepo, orgRepo)
 	orgHandler := handler.NewOrganizationHandler(orgRepo)
-	githubHandler := handler.NewGitHubHandler(githubClientID, githubClientSecret, userRepo, refreshTokenRepo, authService)
+	githubHandler := handler.NewGitHubHandler(githubClientID, githubClientSecret, githubRedirectURL, userRepo, refreshTokenRepo, authService)
 
 	// Router
 	router := api.NewRouter(&handler.Handlers{
