@@ -18,6 +18,7 @@ import (
 type GitHubHandler struct {
 	ClientID       string
 	ClientSecret   string
+	RedirectURL    string
 	UserRepository repository.UserRepository
 	RefreshTokens  repository.RefreshTokenRepository
 	AuthService    *auth.Service
@@ -45,10 +46,11 @@ type GitHubOrg struct {
 	Login string `json:"login"`
 }
 
-func NewGitHubHandler(clientID, clientSecret string, userRepo repository.UserRepository, refreshTokens repository.RefreshTokenRepository, authService *auth.Service) *GitHubHandler {
+func NewGitHubHandler(clientID, clientSecret, redirectURL string, userRepo repository.UserRepository, refreshTokens repository.RefreshTokenRepository, authService *auth.Service) *GitHubHandler {
 	return &GitHubHandler{
 		ClientID:       clientID,
 		ClientSecret:   clientSecret,
+		RedirectURL:    redirectURL,
 		UserRepository: userRepo,
 		RefreshTokens:  refreshTokens,
 		AuthService:    authService,
@@ -84,8 +86,9 @@ func (h *GitHubHandler) issueTokenPair(r *http.Request, userID string, role stri
 
 func (h *GitHubHandler) RedirectToGitHub(w http.ResponseWriter, r *http.Request) {
 	url := fmt.Sprintf(
-		"https://github.com/login/oauth/authorize?client_id=%s&scope=repo,read:org&redirect_uri=http://localhost:8080/auth/github/callback",
+		"https://github.com/login/oauth/authorize?client_id=%s&scope=repo,read:org&redirect_uri=%s",
 		h.ClientID,
+		h.RedirectURL,
 	)
 	http.Redirect(w, r, url, http.StatusTemporaryRedirect)
 }
