@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/lucaspose/GopherCI/actions/workflows/ci.yml/badge.svg)](https://github.com/lucaspose/GopherCI/actions/workflows/ci.yml)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-blue)
+![License](https://img.shields.io/badge/license-AGPL--3.0-blue)
 
 A minimal CI/CD backend written in Go. GopherCI lets you create pipeline jobs that clone a repository, run build/test steps and keep track of their status, logs and artifacts — all through a secure REST API.
 
@@ -417,4 +417,8 @@ migrations/        SQL migration files
 
 ## License
 
-[MIT](LICENSE)
+Copyright (C) 2026 Lucas POSE
+
+Licensed under the [GNU Affero General Public License v3.0](LICENSE).
+You may use, modify and share this project, but any modified version, including
+one offered as a network service, must be released under the same license.
