@@ -54,40 +54,68 @@ Go 1.26 (`net/http`, no web framework) · PostgreSQL 16 · JWT (`golang-jwt`) ·
 
 ## Getting started
 
-### Requirements
+### Option A — Docker Compose (recommended)
 
-- Go 1.26+
-- PostgreSQL 16 (or Docker)
-- Git installed on the host
-
-### 1. Clone
+Requires Docker only.
 
 ```bash
 git clone https://github.com/lucaspose/GopherCI.git
 cd GopherCI
-go mod download
+cp .env.example .env      # then fill in the secrets (see Configuration)
+make up                   # or: docker compose up -d --build
 ```
 
-### 2. Start PostgreSQL
+This starts PostgreSQL and the API on `http://localhost:8080`. Migrations are applied automatically.
+Ports can be changed with `API_PORT` and `DB_PORT` (e.g. `API_PORT=9000 make up`).
 
-```bash
-docker run --name goci-postgres \
-  -e POSTGRES_USER=goci \
-  -e POSTGRES_PASSWORD=goci \
-  -e POSTGRES_DB=goci \
-  -p 5432:5432 \
-  -d postgres:16-alpine
-```
+Pipeline steps run inside the server container, which ships with `git`, `ssh` and the Go toolchain.
 
-### 3. Configure
+### Option B — Run locally
+
+Requires Go 1.26+ and Git.
 
 ```bash
 cp .env.example .env
+make db-up                # PostgreSQL in Docker
+make run                  # go run ./cmd/server
 ```
+
+### Try it
+
+```bash
+# create an account and log in
+curl -X POST localhost:8080/users -d '{"email":"me@example.com","password":"password123"}'
+TOKEN=$(curl -s -X POST localhost:8080/login \
+  -d '{"email":"me@example.com","password":"password123"}' | jq -r .access_token)
+
+# run a pipeline
+curl -X POST localhost:8080/jobs -H "Authorization: Bearer $TOKEN" -d '{
+  "clone_url": "https://github.com/octocat/Hello-World.git",
+  "steps": [{ "name": "show", "cmd": ["cat", "README"] }]
+}'
+
+# check the result
+curl localhost:8080/jobs -H "Authorization: Bearer $TOKEN"
+```
+
+> The API is rate limited to 2 requests per second per IP.
+
+### Make targets
+
+| Command | Description |
+|---------|-------------|
+| `make build` | Build the server into `bin/server` |
+| `make run` | Run the server locally |
+| `make test` | Run the tests with the race detector |
+| `make check` | `go vet` + tests (same as the CI) |
+| `make up` / `make down` | Start / stop the Docker stack |
+| `make logs` | Follow the server logs |
+
+### Configuration
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
+| `DATABASE_URL` | PostgreSQL connection string (set automatically with Docker Compose) |
 | `JWT_SECRET` | Secret used to sign JWT tokens |
 | `JWT_EXPIRY` | Access token expiry in minutes |
 | `JWT_REFRESH_EXPIRY` | Refresh token expiry in minutes (default: 10080 = 7 days) |
@@ -102,20 +130,6 @@ To generate a secure `ENCRYPTION_KEY`:
 
 ```bash
 openssl rand -base64 32 | head -c 32
-```
-
-### 4. Run
-
-```bash
-go run ./cmd/server
-```
-
-The server listens on `:8080` and applies the SQL migrations on startup.
-
-### Tests
-
-```bash
-go test ./... -race
 ```
 
 ---
@@ -227,7 +241,7 @@ All protected routes require the `Authorization: Bearer <token>` header.
 **Request:**
 ```json
 {
-  "repo": "git@github.com:user/repo.git",
+  "clone_url": "git@github.com:user/repo.git",
   "ssh_key_id": "uuid",
   "steps": [
     {
@@ -258,7 +272,7 @@ All protected routes require the `Authorization: Bearer <token>` header.
 [
   {
     "id": "uuid",
-    "repo": "git@github.com:user/repo.git",
+    "clone_url": "git@github.com:user/repo.git",
     "steps": [...],
     "user_id": "uuid",
     "status": "success",
@@ -276,7 +290,7 @@ All protected routes require the `Authorization: Bearer <token>` header.
 ```json
 {
   "id": "uuid",
-  "repo": "git@github.com:user/repo.git",
+  "clone_url": "git@github.com:user/repo.git",
   "steps": [...],
   "user_id": "uuid",
   "status": "success",
