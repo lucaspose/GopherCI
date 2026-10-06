@@ -362,6 +362,8 @@ All protected routes require the `Authorization: Bearer <token>` header.
 | `DELETE` | `/organizations/{id}` 🔒 | Delete an organization |
 | `POST` / `GET` | `/organizations/{orgId}/repositories` 🔒 | Add / list repositories |
 | `DELETE` | `/organizations/{orgId}/repositories/{id}` 🔒 | Remove a repository |
+| `POST` / `GET` | `/organizations/{orgId}/repositories/{repoId}/jobs` 🔒 | Run a pipeline on a registered repository / list its jobs |
+| `DELETE` | `/organizations/{orgId}/repositories/{repoId}/jobs/{id}` 🔒 | Delete one of the repository's jobs |
 | `GET` | `/auth/github` | Start the GitHub OAuth flow |
 | `GET` | `/auth/github/organizations`, `/auth/github/repositories` | List the connected account's GitHub orgs and repos |
 
@@ -404,6 +406,7 @@ migrations/        SQL migration files
 ## Security notes
 
 - Passwords are hashed with bcrypt; SSH keys are encrypted at rest with AES-256-GCM and never returned by the API.
+- Jobs, logs and artifacts are only visible to the user who created them.
 - Signup, login and token endpoints have their own strict rate limit (1 req/s per IP, burst 5).
 - The decrypted SSH key only exists during `git clone` and is deleted before any step runs.
 - Pipeline steps run with a minimal environment: server secrets (`JWT_SECRET`, `ENCRYPTION_KEY`, `DATABASE_URL`, …) are not passed to user commands.

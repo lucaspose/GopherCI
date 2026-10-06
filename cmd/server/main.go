@@ -94,7 +94,7 @@ func main() {
 	// Handler
 	userHandler := handler.NewUserHandler(userRepo)
 	authHandler := handler.NewAuthHandler(userRepo, refreshTokenRepo, authService)
-	jobHandler := handler.NewJobHandler(worker, jobRepo)
+	jobHandler := handler.NewJobHandler(worker, jobRepo).WithRepositories(repoRepo, orgRepo)
 	sshHandler := handler.NewSSHKeyHandler(sshRepo, encryptionKey)
 	repoHandler := handler.NewRepositoryHandler(repoRepo, orgRepo)
 	orgHandler := handler.NewOrganizationHandler(orgRepo)

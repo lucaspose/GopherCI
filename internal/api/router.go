@@ -156,6 +156,27 @@ func NewRouter(handlers *handler.Handlers, authService *auth.Service, limit rate
 		}
 		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 	})
+	mux.HandleFunc("/organizations/{orgId}/repositories/{repoId}/jobs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			handler := middleware.RequireAuth(authService)(http.HandlerFunc(handlers.Job.CreateRepoJob))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if r.Method == http.MethodGet {
+			handler := middleware.RequireAuth(authService)(http.HandlerFunc(handlers.Job.GetRepoJobs))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+	})
+	mux.HandleFunc("/organizations/{orgId}/repositories/{repoId}/jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			handler := middleware.RequireAuth(authService)(http.HandlerFunc(handlers.Job.DeleteJob))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+	})
 	mux.HandleFunc("/organizations/{orgId}/repositories/{id}", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			handler := middleware.RequireAuth(authService)(http.HandlerFunc(handlers.Repo.DeleteRepository))
