@@ -19,9 +19,9 @@ type RateLimiter struct {
 func NewRateLimiter(r rate.Limit, burst int) *RateLimiter {
 	return &RateLimiter{
 		limiters: make(map[string]*rate.Limiter),
-		mu: sync.Mutex{},
-		rate: r,
-		burst: burst,
+		mu:       sync.Mutex{},
+		rate:     r,
+		burst:    burst,
 	}
 }
 

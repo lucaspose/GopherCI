@@ -112,11 +112,18 @@ func (w *Worker) executeJob(job models.Job) {
 	repoName := path.Base(repoURL)
 	repoDir := filepath.Join(dir, strings.TrimSuffix(repoName, ".git"))
 	cmdClone := exec.CommandContext(ctx, "git", "clone", repoURL)
-	cmdClone.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmdClone.Env = append(jobEnv(), "GIT_TERMINAL_PROMPT=0")
+	sshKeyPath := ""
 	if job.SSHKeyID != "" {
 		key, err := w.SSHkeyRepo.GetByID(ctx, job.SSHKeyID)
 		if err != nil {
 			log.Printf("[ERROR] failed to get ssh keys from id [%s]: %v", job.ID, err)
+			return
+		}
+		// Never let a job use an SSH key that belongs to another user.
+		if key.UserID != job.UserID {
+			log.Printf("[ERROR] job [%s] references an ssh key it does not own", job.ID)
+			w.failJob(ctx, job, "ssh key not found")
 			return
 		}
 		dercryptedKey, err := crypto.Decrypt(key.PrivateKey, []byte(w.EncryptionKey))
@@ -129,11 +136,17 @@ func (w *Worker) executeJob(job models.Job) {
 			log.Printf("[ERROR] failed write ssh key in temp file [%s]: %v", job.ID, err)
 			return
 		}
+		sshKeyPath = tempKeyPath
 		defer os.Remove(tempKeyPath)
 		cmdClone.Env = append(cmdClone.Env, fmt.Sprintf("GIT_SSH_COMMAND=ssh -i %s -o StrictHostKeyChecking=no", tempKeyPath))
 	}
 	cmdClone.Dir = dir
 	outputClone, err := cmdClone.CombinedOutput()
+	// The decrypted key is only needed for the clone: delete it before any
+	// user-provided step runs so steps cannot read it.
+	if sshKeyPath != "" {
+		os.Remove(sshKeyPath)
+	}
 	if workerDebugLogsEnabled {
 		log.Printf("[DEBUG] clone output for job [%s]: %s", job.ID, strings.TrimSpace(string(outputClone)))
 	}
@@ -164,6 +177,7 @@ func (w *Worker) executeJob(job models.Job) {
 		log.Printf("[INFO] step [%s] running: job [%s]", step.Name, job.ID)
 		cmd := exec.CommandContext(ctx, program, args...)
 		cmd.Dir = repoDir
+		cmd.Env = jobEnv()
 		output, err := cmd.CombinedOutput()
 		if workerDebugLogsEnabled {
 			log.Printf("[DEBUG] step [%s] output for job [%s]: %s", step.Name, job.ID, strings.TrimSpace(string(output)))
@@ -357,4 +371,28 @@ func (w *Worker) zipDirectory(sourceDir, zipPath string) error {
 		return fmt.Errorf("close artifact zip file: %w", closeFileErr)
 	}
 	return nil
+}
+
+// jobEnv returns the environment given to git and pipeline steps.
+// It is built from an allowlist so that server secrets (JWT_SECRET,
+// ENCRYPTION_KEY, DATABASE_URL, ...) never reach user-provided commands.
+func jobEnv() []string {
+	env := []string{"CI=true"}
+	for _, key := range []string{"PATH", "HOME", "LANG", "TMPDIR", "GOPATH", "GOCACHE", "GOMODCACHE"} {
+		if value, ok := os.LookupEnv(key); ok {
+			env = append(env, key+"="+value)
+		}
+	}
+	return env
+}
+
+// failJob marks a job as failed with a single log line.
+func (w *Worker) failJob(ctx context.Context, job models.Job, message string) {
+	job.Logs = append(job.Logs, message)
+	if err := w.JobRepo.UpdateLogs(ctx, job.ID, job.Logs); err != nil {
+		log.Printf("[ERROR] failed to update logs [%s]: %v", job.ID, err)
+	}
+	if err := w.JobRepo.UpdateStatus(ctx, job.ID, models.JobFailed); err != nil {
+		log.Printf("[ERROR] failed to update status [%s]: %v", job.ID, err)
+	}
 }

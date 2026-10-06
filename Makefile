@@ -1,124 +1,50 @@
-# =========================
-
-# CONFIG
-
-# =========================
-
-APP_NAME=goci
-
-CMD_DIR=./cmd
-BUILD_DIR=./bin
-
-SERVER=$(BUILD_DIR)/server
-WORKER=$(BUILD_DIR)/worker
-DISPATCHER=$(BUILD_DIR)/dispatcher
-CLI=$(BUILD_DIR)/goci
-
-GO=go
-
-# =========================
-
-# DEFAULT
-
-# =========================
+BIN := bin/server
 
 .DEFAULT_GOAL := help
 
-# =========================
-
-# HELP
-
-# =========================
+.PHONY: help build run test vet fmt check db-up up down logs clean
 
 help:
-	@echo ""
-	@echo "make build        Compile tous les binaires"
-	@echo "make test         Run tests (race)"
-	@echo "make lint         Lint code"
-	@echo "make dev          Dev env (docker + air)"
-	@echo "make proto        Génère gRPC"
-	@echo "make docker-up    Start containers"
-	@echo "make docker-down  Stop containers"
-	@echo ""
+	@echo "make build   Build the server into $(BIN)"
+	@echo "make run     Run the server locally (needs PostgreSQL, see make db-up)"
+	@echo "make test    Run the tests with the race detector"
+	@echo "make vet     Run go vet"
+	@echo "make fmt     Format the code"
+	@echo "make check   vet + tests (what the CI runs)"
+	@echo "make db-up   Start only PostgreSQL with Docker"
+	@echo "make up      Start PostgreSQL + the server with Docker"
+	@echo "make down    Stop the Docker stack"
+	@echo "make logs    Follow the server logs"
+	@echo "make clean   Remove build output"
 
-# =========================
+build:
+	go build -o $(BIN) ./cmd/server
 
-# BUILD
-
-# =========================
-
-build: build-server build-worker build-dispatcher build-cli
-
-build-server:
-	@mkdir -p $(BUILD_DIR)
-	$(GO) build -o $(SERVER) $(CMD_DIR)/server
-
-build-worker:
-	@mkdir -p $(BUILD_DIR)
-	$(GO) build -o $(WORKER) $(CMD_DIR)/worker
-
-build-dispatcher:
-	@mkdir -p $(BUILD_DIR)
-	$(GO) build -o $(DISPATCHER) $(CMD_DIR)/dispatcher
-
-build-cli:
-	@mkdir -p $(BUILD_DIR)
-	$(GO) build -o $(CLI) $(CMD_DIR)/goci
-
-# =========================
-
-# TEST
-
-# =========================
+run:
+	go run ./cmd/server
 
 test:
-	$(GO) test ./... -race -count=1
+	go test ./... -race -count=1
 
-# =========================
+vet:
+	go vet ./...
 
-# LINT
+fmt:
+	gofmt -w .
 
-# =========================
+check: vet test
 
-lint:
-	golangci-lint run
+db-up:
+	docker compose up -d postgres
 
-# =========================
+up:
+	docker compose up -d --build
 
-# DEV
+down:
+	docker compose down
 
-# =========================
-
-dev:
-	docker-compose up -d postgres redis
-	air
-
-# =========================
-
-# PROTO
-
-# =========================
-
-proto:
-	protoc --go_out=proto/gen --go-grpc_out=proto/gen proto/dispatcher.proto
-
-# =========================
-
-# DOCKER
-
-# =========================
-
-docker-up:
-	docker-compose up -d
-
-docker-down:
-	docker-compose down
-
-# =========================
-
-# CLEAN
-
-# =========================
+logs:
+	docker compose logs -f server
 
 clean:
-	rm -rf $(BUILD_DIR)
+	rm -rf bin

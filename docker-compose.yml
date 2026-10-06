@@ -1,87 +1,38 @@
-name: goci-stack
-
-networks:
-  goci-net:
-    driver: bridge
-
-volumes:
-  postgres-data:
-  grafana-data:
+name: gopherci
 
 services:
   postgres:
-    user: "70:70"
     image: postgres:16-alpine
-    container_name: goci-postgres
     restart: unless-stopped
     environment:
       POSTGRES_USER: goci
       POSTGRES_PASSWORD: goci
       POSTGRES_DB: goci
     ports:
-      - "5432:5432"
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./deploy/postgres/ssl/server.crt:/etc/ssl/pg/server.crt:ro
-      - ./deploy/postgres/ssl/server.key:/etc/ssl/pg/server.key:ro
-    command: >
-      postgres
-      -c ssl=on
-      -c ssl_cert_file=/etc/ssl/pg/server.crt
-      -c ssl_key_file=/etc/ssl/pg/server.key
-      -c ssl_min_protocol_version=TLSv1.2
-    networks:
-      - goci-net
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U goci -d goci"]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 10
 
-  redis:
-    image: redis:7-alpine
-    container_name: goci-redis
+  server:
+    build: .
     restart: unless-stopped
-
-    ports:
-      - "6379:6379"
-
-    networks:
-      - goci-net
-
-  prometheus:
-    image: prom/prometheus
-    container_name: goci-prometheus
-    restart: unless-stopped
-
-    ports:
-      - "9090:9090"
-
-    volumes:
-      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-
-    networks:
-      - goci-net
-
-  grafana:
-    image: grafana/grafana
-    container_name: goci-grafana
-    restart: unless-stopped
-
-    ports:
-      - "3000:3000"
-
-    volumes:
-      - grafana-data:/var/lib/grafana
-      - ./deploy/grafana/provisioning:/etc/grafana/provisioning
-      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards
-
+    env_file: .env
     environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      DATABASE_URL: postgres://goci:goci@postgres:5432/goci?sslmode=disable
+      ARTIFACTS_DIR: /app/artifacts
+    ports:
+      - "${API_PORT:-8080}:8080"
+    volumes:
+      - artifacts:/app/artifacts
+    depends_on:
+      postgres:
+        condition: service_healthy
 
-    networks:
-      - goci-net
+volumes:
+  postgres-data:
+  artifacts:

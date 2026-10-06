@@ -138,7 +138,7 @@ func (h *GitHubHandler) Callback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *GitHubHandler) GetOrganizations(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
+	token := githubTokenFromRequest(r)
 	if token == "" {
 		response.WriteJSONError(w, http.StatusBadRequest, "no token")
 		return
@@ -169,7 +169,7 @@ func (h *GitHubHandler) GetOrganizations(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *GitHubHandler) GetRepositories(w http.ResponseWriter, r *http.Request) {
-	token := r.URL.Query().Get("token")
+	token := githubTokenFromRequest(r)
 	if token == "" {
 		response.WriteJSONError(w, http.StatusBadRequest, "no token")
 		return
@@ -258,4 +258,14 @@ func (h *GitHubHandler) ExchangeGitHubToken(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	response.WriteJSON(w, http.StatusOK, tokens)
+}
+
+// githubTokenFromRequest reads the GitHub token from the X-GitHub-Token header.
+// The ?token= query parameter is still accepted for older clients, but headers
+// are preferred because URLs end up in logs and proxies.
+func githubTokenFromRequest(r *http.Request) string {
+	if token := r.Header.Get("X-GitHub-Token"); token != "" {
+		return token
+	}
+	return r.URL.Query().Get("token")
 }

@@ -22,6 +22,9 @@ import (
 type JobHandler struct {
 	JobWorker *worker.Worker
 	JobRepo   repository.JobsRepository
+	Repos     repository.RepositoryRepository
+	Orgs      repository.OrganizationRepository
+	SSHKeys   repository.SSHKeyRepository
 }
 
 type CreateJobRequest struct {
@@ -61,6 +64,34 @@ func NewJobHandler(JobWorker *worker.Worker, jobRepo repository.JobsRepository) 
 	}
 }
 
+// WithSSHKeys lets the handler reject jobs that reference another user's SSH key.
+func (j *JobHandler) WithSSHKeys(keys repository.SSHKeyRepository) *JobHandler {
+	j.SSHKeys = keys
+	return j
+}
+
+// ownsSSHKey reports whether the SSH key (if any) belongs to the user.
+func (j *JobHandler) ownsSSHKey(r *http.Request, userID, keyID string) (bool, error) {
+	if keyID == "" || j.SSHKeys == nil {
+		return true, nil
+	}
+	key, err := j.SSHKeys.GetByID(r.Context(), keyID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return key.UserID == userID, nil
+}
+
+// WithRepositories enables the repository-scoped job routes.
+func (j *JobHandler) WithRepositories(repos repository.RepositoryRepository, orgs repository.OrganizationRepository) *JobHandler {
+	j.Repos = repos
+	j.Orgs = orgs
+	return j
+}
+
 func (j *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	var req CreateJobRequest
 	defer r.Body.Close()
@@ -76,6 +107,13 @@ func (j *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(appcontext.UserIDKey).(string)
 	if !ok {
 		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	if owned, err := j.ownsSSHKey(r, userID, req.SSHKeyID); err != nil {
+		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	} else if !owned {
+		response.WriteJSONError(w, http.StatusBadRequest, "ssh key not found")
 		return
 	}
 	job := models.Job{
@@ -95,8 +133,10 @@ func (j *JobHandler) GetJob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
 
+	userID, _ := ctx.Value(appcontext.UserIDKey).(string)
+
 	job, err := j.JobRepo.GetByID(ctx, id)
-	if errors.Is(err, repository.ErrNotFound) {
+	if errors.Is(err, repository.ErrNotFound) || (err == nil && job.UserID != userID) {
 		response.WriteJSONError(w, http.StatusNotFound, "not found")
 		return
 	}
@@ -313,8 +353,19 @@ func (j *JobHandler) artifactPath(jobID string) (string, error) {
 func (j *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	id := r.PathValue("id")
+	userID, _ := ctx.Value(appcontext.UserIDKey).(string)
 
-	err := j.JobRepo.Delete(ctx, id)
+	job, err := j.JobRepo.GetByID(ctx, id)
+	if errors.Is(err, repository.ErrNotFound) || (err == nil && job.UserID != userID) {
+		response.WriteJSONError(w, http.StatusNotFound, "job not found")
+		return
+	}
+	if err != nil {
+		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+
+	err = j.JobRepo.Delete(ctx, id)
 	if errors.Is(err, repository.ErrNotFound) {
 		response.WriteJSONError(w, http.StatusNotFound, "job not found")
 		return
@@ -324,4 +375,98 @@ func (j *JobHandler) DeleteJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type createRepoJobRequest struct {
+	SSHKeyID string        `json:"ssh_key_id"`
+	Steps    []models.Step `json:"steps"`
+}
+
+// ownedRepository returns the repository {repoId} of organization {orgId}
+// if that organization belongs to the current user.
+func (j *JobHandler) ownedRepository(r *http.Request, userID string) (models.Repository, bool, error) {
+	orgID := r.PathValue("orgId")
+	repoID := r.PathValue("repoId")
+	org, err := j.Orgs.GetByID(r.Context(), orgID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return models.Repository{}, false, nil
+	}
+	if err != nil {
+		return models.Repository{}, false, err
+	}
+	if org.OwnerID != userID {
+		return models.Repository{}, false, nil
+	}
+	repo, err := j.Repos.GetByID(r.Context(), repoID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return models.Repository{}, false, nil
+	}
+	if err != nil {
+		return models.Repository{}, false, err
+	}
+	return repo, repo.OrgID == orgID, nil
+}
+
+// CreateRepoJob runs a pipeline on a repository registered in an organization.
+func (j *JobHandler) CreateRepoJob(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(appcontext.UserIDKey).(string)
+	if !ok {
+		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	var body createRepoJobRequest
+	defer r.Body.Close()
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		response.WriteJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	repo, found, err := j.ownedRepository(r, userID)
+	if err != nil {
+		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	if !found {
+		response.WriteJSONError(w, http.StatusNotFound, "repository not found")
+		return
+	}
+	req := CreateJobRequest{CloneURL: repo.Repo, SSHKeyID: body.SSHKeyID, Steps: body.Steps}
+	if err := req.Validate(); err != nil {
+		response.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if owned, err := j.ownsSSHKey(r, userID, req.SSHKeyID); err != nil {
+		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	} else if !owned {
+		response.WriteJSONError(w, http.StatusBadRequest, "ssh key not found")
+		return
+	}
+	j.JobWorker.JobQueue <- models.Job{
+		ID:        uuid.NewString(),
+		CloneURL:  req.CloneURL,
+		SSHKeyID:  req.SSHKeyID,
+		Steps:     req.Steps,
+		UserID:    userID,
+		Status:    models.JobPending,
+		CreatedAt: time.Now(),
+	}
+	response.WriteJSON(w, http.StatusAccepted, "job created")
+}
+
+// GetRepoJobs lists the current user's jobs for one repository of an organization.
+func (j *JobHandler) GetRepoJobs(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(appcontext.UserIDKey).(string)
+	if !ok {
+		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	jobs, err := j.JobRepo.GetFiltered(r.Context(), userID, repository.JobFilters{
+		OrgID:  r.PathValue("orgId"),
+		RepoID: r.PathValue("repoId"),
+	})
+	if err != nil {
+		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	response.WriteJSON(w, http.StatusOK, jobs)
 }

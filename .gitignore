@@ -1,110 +1,25 @@
-# =========================
-
-# Go build files
-
-# =========================
-
+# Binaries
 bin/
-build/
-dist/
 *.exe
-*.exe~
-*.dll
-*.so
-*.dylib
-
-# Test binaries
-
 *.test
 
 # Coverage
-
 *.out
 coverage/
-*.coverprofile
 
-# =========================
+# Job artifacts produced by the worker
+artifacts/
 
-# Go modules
-
-# =========================
-
-vendor/
-
-# =========================
-
-# Logs
-
-# =========================
-
-*.log
-logs/
-tmp/
-*.tmp
-
-# =========================
-
-# Environment variables
-
-# =========================
-
+# Environment
 .env
 .env.*
 !.env.example
 
-# =========================
+# Logs
+*.log
 
-# IDE / Editor
-
-# =========================
-
+# Editors / OS
 .vscode/
 .idea/
 *.swp
-*.swo
-*~
-
-# =========================
-
-# OS files
-
-# =========================
-
 .DS_Store
-Thumbs.db
-
-# =========================
-
-# Docker
-
-# =========================
-
-docker-compose.override.yml
-
-# =========================
-
-# Kubernetes
-
-# =========================
-
-*.kubeconfig
-
-# =========================
-
-# Terraform (si tu fais du cloud)
-
-# =========================
-
-.terraform/
-*.tfstate
-*.tfstate.*
-crash.log
-
-# =========================
-
-# Misc
-
-# =========================
-
-node_modules/
-coverage/

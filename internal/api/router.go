@@ -10,12 +10,14 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func NewRouter(handlers *handler.Handlers, authService *auth.Service) http.Handler {
+func NewRouter(handlers *handler.Handlers, authService *auth.Service, limit rate.Limit, burst int) http.Handler {
 	mux := http.NewServeMux()
-	rateLimiter := middleware.NewRateLimiter(rate.Limit(2), 2)
+	rateLimiter := middleware.NewRateLimiter(limit, burst)
+	// Stricter per-IP limit on credential endpoints to slow down brute force.
+	authLimiter := middleware.NewRateLimiter(rate.Limit(1), 5).Limit()
 	mux.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			handlers.User.CreateUser(w, r)
+			authLimiter(http.HandlerFunc(handlers.User.CreateUser)).ServeHTTP(w, r)
 			return
 		}
 		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -30,14 +32,14 @@ func NewRouter(handlers *handler.Handlers, authService *auth.Service) http.Handl
 	})
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			handlers.Auth.Login(w, r)
+			authLimiter(http.HandlerFunc(handlers.Auth.Login)).ServeHTTP(w, r)
 			return
 		}
 		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 	})
 	mux.HandleFunc("/auth/refresh", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			handlers.Auth.Refresh(w, r)
+			authLimiter(http.HandlerFunc(handlers.Auth.Refresh)).ServeHTTP(w, r)
 			return
 		}
 		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -154,6 +156,27 @@ func NewRouter(handlers *handler.Handlers, authService *auth.Service) http.Handl
 		}
 		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 	})
+	mux.HandleFunc("/organizations/{orgId}/repositories/{repoId}/jobs", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			handler := middleware.RequireAuth(authService)(http.HandlerFunc(handlers.Job.CreateRepoJob))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		if r.Method == http.MethodGet {
+			handler := middleware.RequireAuth(authService)(http.HandlerFunc(handlers.Job.GetRepoJobs))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+	})
+	mux.HandleFunc("/organizations/{orgId}/repositories/{repoId}/jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			handler := middleware.RequireAuth(authService)(http.HandlerFunc(handlers.Job.DeleteJob))
+			handler.ServeHTTP(w, r)
+			return
+		}
+		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+	})
 	mux.HandleFunc("/organizations/{orgId}/repositories/{id}", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodDelete {
 			handler := middleware.RequireAuth(authService)(http.HandlerFunc(handlers.Repo.DeleteRepository))
@@ -162,40 +185,43 @@ func NewRouter(handlers *handler.Handlers, authService *auth.Service) http.Handl
 		}
 		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 	})
-	mux.HandleFunc("/auth/github", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			handlers.Github.RedirectToGitHub(w, r)
-			return
-		}
-		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-	})
-	mux.HandleFunc("/auth/github/callback", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			handlers.Github.Callback(w, r)
-			return
-		}
-		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-	})
-	mux.HandleFunc("/auth/github/organizations", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			handlers.Github.GetOrganizations(w, r)
-			return
-		}
-		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-	})
-	mux.HandleFunc("/auth/github/repositories", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			handlers.Github.GetRepositories(w, r)
-			return
-		}
-		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-	})
-	mux.HandleFunc("/auth/github/exchange", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost {
-			handlers.Github.ExchangeGitHubToken(w, r)
-			return
-		}
-		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
-	})
+	// GitHub OAuth routes are only available when the OAuth app is configured.
+	if handlers.Github != nil {
+		mux.HandleFunc("/auth/github", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				handlers.Github.RedirectToGitHub(w, r)
+				return
+			}
+			response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		})
+		mux.HandleFunc("/auth/github/callback", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				handlers.Github.Callback(w, r)
+				return
+			}
+			response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		})
+		mux.HandleFunc("/auth/github/organizations", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				handlers.Github.GetOrganizations(w, r)
+				return
+			}
+			response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		})
+		mux.HandleFunc("/auth/github/repositories", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodGet {
+				handlers.Github.GetRepositories(w, r)
+				return
+			}
+			response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		})
+		mux.HandleFunc("/auth/github/exchange", func(w http.ResponseWriter, r *http.Request) {
+			if r.Method == http.MethodPost {
+				authLimiter(http.HandlerFunc(handlers.Github.ExchangeGitHubToken)).ServeHTTP(w, r)
+				return
+			}
+			response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
+		})
+	}
 	return middleware.Logging()(rateLimiter.Limit()(mux))
 }
