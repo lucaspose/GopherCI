@@ -406,7 +406,7 @@ migrations/        SQL migration files
 - Passwords are hashed with bcrypt; SSH keys are encrypted at rest with AES-256-GCM and never returned by the API.
 - Pipeline steps run with a minimal environment: server secrets (`JWT_SECRET`, `ENCRYPTION_KEY`, `DATABASE_URL`, …) are not passed to user commands.
 - With Docker Compose the server runs as a non-root user and PostgreSQL is only reachable from `localhost`.
-- Steps still execute on the same host as the API. Running each job in its own throwaway container is the next step before exposing GopherCI to untrusted users.
+- Steps still run as the same user as the API, so a malicious step could read the server process memory or environment. Running each job in its own throwaway container is the next step before exposing GopherCI to untrusted users.
 
 ---
 
