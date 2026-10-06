@@ -15,7 +15,7 @@ const (
 
 type Job struct {
 	ID        string    `json:"id"`
-    CloneURL  string    `json:"clone_url"`
+	CloneURL  string    `json:"clone_url"`
 	Steps     []Step    `json:"steps"`
 	UserID    string    `json:"user_id"`
 	Status    JobStatus `json:"status"`

@@ -3,13 +3,13 @@ package handler
 import (
 	"context"
 
-	"github.com/lucaspose/goci/internal/models"
 	"github.com/lucaspose/goci/internal/db/repository"
+	"github.com/lucaspose/goci/internal/models"
 )
 
 type mockUserRepo struct {
-	users  map[string]*models.User
-	byEmail map[string]*models.User
+	users     map[string]*models.User
+	byEmail   map[string]*models.User
 	createErr error
 }
 

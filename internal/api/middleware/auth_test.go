@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/lucaspose/goci/internal/auth"
 	appcontext "github.com/lucaspose/goci/internal/api/context"
+	"github.com/lucaspose/goci/internal/auth"
 )
 
 func newTestAuthService() *auth.Service {

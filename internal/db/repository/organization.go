@@ -97,7 +97,7 @@ func (r *sqlOrganizationRepository) Delete(ctx context.Context, id string) error
 	DELETE FROM organizations
 	WHERE id = $1
 	`
-	result, err := r.db.ExecContext(ctx,  query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("delete organization by id: %w", err)
 	}
