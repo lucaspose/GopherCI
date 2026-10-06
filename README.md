@@ -98,7 +98,7 @@ curl -X POST localhost:8080/jobs -H "Authorization: Bearer $TOKEN" -d '{
 curl localhost:8080/jobs -H "Authorization: Bearer $TOKEN"
 ```
 
-> Requests are rate limited per IP (10 req/s, burst 20 by default — see `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST`).
+> Requests are rate limited per IP (10 req/s, burst 20 by default — see `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST`). Signup, login and token endpoints have a stricter limit of 1 req/s (burst 5) against brute force.
 
 ### Make targets
 
@@ -404,6 +404,8 @@ migrations/        SQL migration files
 ## Security notes
 
 - Passwords are hashed with bcrypt; SSH keys are encrypted at rest with AES-256-GCM and never returned by the API.
+- Signup, login and token endpoints have their own strict rate limit (1 req/s per IP, burst 5).
+- The decrypted SSH key only exists during `git clone` and is deleted before any step runs.
 - Pipeline steps run with a minimal environment: server secrets (`JWT_SECRET`, `ENCRYPTION_KEY`, `DATABASE_URL`, …) are not passed to user commands.
 - With Docker Compose the server runs as a non-root user and PostgreSQL is only reachable from `localhost`.
 - Steps still run as the same user as the API, so a malicious step could read the server process memory or environment. Running each job in its own throwaway container is the next step before exposing GopherCI to untrusted users.

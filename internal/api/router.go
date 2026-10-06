@@ -13,9 +13,11 @@ import (
 func NewRouter(handlers *handler.Handlers, authService *auth.Service, limit rate.Limit, burst int) http.Handler {
 	mux := http.NewServeMux()
 	rateLimiter := middleware.NewRateLimiter(limit, burst)
+	// Stricter per-IP limit on credential endpoints to slow down brute force.
+	authLimiter := middleware.NewRateLimiter(rate.Limit(1), 5).Limit()
 	mux.HandleFunc("/users", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			handlers.User.CreateUser(w, r)
+			authLimiter(http.HandlerFunc(handlers.User.CreateUser)).ServeHTTP(w, r)
 			return
 		}
 		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -30,14 +32,14 @@ func NewRouter(handlers *handler.Handlers, authService *auth.Service, limit rate
 	})
 	mux.HandleFunc("/login", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			handlers.Auth.Login(w, r)
+			authLimiter(http.HandlerFunc(handlers.Auth.Login)).ServeHTTP(w, r)
 			return
 		}
 		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
 	})
 	mux.HandleFunc("/auth/refresh", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			handlers.Auth.Refresh(w, r)
+			authLimiter(http.HandlerFunc(handlers.Auth.Refresh)).ServeHTTP(w, r)
 			return
 		}
 		response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")
@@ -194,7 +196,7 @@ func NewRouter(handlers *handler.Handlers, authService *auth.Service, limit rate
 		})
 		mux.HandleFunc("/auth/github/exchange", func(w http.ResponseWriter, r *http.Request) {
 			if r.Method == http.MethodPost {
-				handlers.Github.ExchangeGitHubToken(w, r)
+				authLimiter(http.HandlerFunc(handlers.Github.ExchangeGitHubToken)).ServeHTTP(w, r)
 				return
 			}
 			response.WriteJSONError(w, http.StatusMethodNotAllowed, "method not allowed")

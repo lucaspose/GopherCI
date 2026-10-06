@@ -113,6 +113,7 @@ func (w *Worker) executeJob(job models.Job) {
 	repoDir := filepath.Join(dir, strings.TrimSuffix(repoName, ".git"))
 	cmdClone := exec.CommandContext(ctx, "git", "clone", repoURL)
 	cmdClone.Env = append(jobEnv(), "GIT_TERMINAL_PROMPT=0")
+	sshKeyPath := ""
 	if job.SSHKeyID != "" {
 		key, err := w.SSHkeyRepo.GetByID(ctx, job.SSHKeyID)
 		if err != nil {
@@ -129,11 +130,17 @@ func (w *Worker) executeJob(job models.Job) {
 			log.Printf("[ERROR] failed write ssh key in temp file [%s]: %v", job.ID, err)
 			return
 		}
+		sshKeyPath = tempKeyPath
 		defer os.Remove(tempKeyPath)
 		cmdClone.Env = append(cmdClone.Env, fmt.Sprintf("GIT_SSH_COMMAND=ssh -i %s -o StrictHostKeyChecking=no", tempKeyPath))
 	}
 	cmdClone.Dir = dir
 	outputClone, err := cmdClone.CombinedOutput()
+	// The decrypted key is only needed for the clone: delete it before any
+	// user-provided step runs so steps cannot read it.
+	if sshKeyPath != "" {
+		os.Remove(sshKeyPath)
+	}
 	if workerDebugLogsEnabled {
 		log.Printf("[DEBUG] clone output for job [%s]: %s", job.ID, strings.TrimSpace(string(outputClone)))
 	}
