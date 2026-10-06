@@ -4,9 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	appcontext "github.com/lucaspose/goci/internal/api/context"
+	"github.com/lucaspose/goci/internal/db/repository"
 	"github.com/lucaspose/goci/internal/models"
 )
 
@@ -40,5 +42,36 @@ func TestJobsAreOnlyVisibleToTheirOwner(t *testing.T) {
 				t.Fatalf("status = %d, want %d", rec.Code, tt.want)
 			}
 		})
+	}
+}
+
+type stubSSHKeys struct{ keys map[string]models.SSHKey }
+
+func (s stubSSHKeys) Create(context.Context, *models.SSHKey) error { return nil }
+func (s stubSSHKeys) GetByUserID(context.Context, string) ([]models.SSHKey, error) {
+	return nil, nil
+}
+func (s stubSSHKeys) Delete(context.Context, string) error { return nil }
+func (s stubSSHKeys) GetByID(_ context.Context, id string) (models.SSHKey, error) {
+	key, ok := s.keys[id]
+	if !ok {
+		return models.SSHKey{}, repository.ErrNotFound
+	}
+	return key, nil
+}
+
+func TestCreateJobRejectsSomeoneElsesSSHKey(t *testing.T) {
+	keys := stubSSHKeys{keys: map[string]models.SSHKey{"key-1": {ID: "key-1", UserID: "owner"}}}
+	h := NewJobHandler(nil, &mockJobRepo{}).WithSSHKeys(keys)
+
+	body := `{"clone_url":"git@github.com:owner/private.git","ssh_key_id":"key-1","steps":[{"name":"x","cmd":["true"]}]}`
+	req := httptest.NewRequest(http.MethodPost, "/jobs", strings.NewReader(body))
+	req = req.WithContext(context.WithValue(req.Context(), appcontext.UserIDKey, "intruder"))
+	rec := httptest.NewRecorder()
+
+	h.CreateJob(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusBadRequest)
 	}
 }

@@ -120,6 +120,12 @@ func (w *Worker) executeJob(job models.Job) {
 			log.Printf("[ERROR] failed to get ssh keys from id [%s]: %v", job.ID, err)
 			return
 		}
+		// Never let a job use an SSH key that belongs to another user.
+		if key.UserID != job.UserID {
+			log.Printf("[ERROR] job [%s] references an ssh key it does not own", job.ID)
+			w.failJob(ctx, job, "ssh key not found")
+			return
+		}
 		dercryptedKey, err := crypto.Decrypt(key.PrivateKey, []byte(w.EncryptionKey))
 		if err != nil {
 			log.Printf("[ERROR] failed to get decrypted key [%s]: %v", job.ID, err)
@@ -378,4 +384,15 @@ func jobEnv() []string {
 		}
 	}
 	return env
+}
+
+// failJob marks a job as failed with a single log line.
+func (w *Worker) failJob(ctx context.Context, job models.Job, message string) {
+	job.Logs = append(job.Logs, message)
+	if err := w.JobRepo.UpdateLogs(ctx, job.ID, job.Logs); err != nil {
+		log.Printf("[ERROR] failed to update logs [%s]: %v", job.ID, err)
+	}
+	if err := w.JobRepo.UpdateStatus(ctx, job.ID, models.JobFailed); err != nil {
+		log.Printf("[ERROR] failed to update status [%s]: %v", job.ID, err)
+	}
 }

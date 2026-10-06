@@ -24,6 +24,7 @@ type JobHandler struct {
 	JobRepo   repository.JobsRepository
 	Repos     repository.RepositoryRepository
 	Orgs      repository.OrganizationRepository
+	SSHKeys   repository.SSHKeyRepository
 }
 
 type CreateJobRequest struct {
@@ -63,6 +64,27 @@ func NewJobHandler(JobWorker *worker.Worker, jobRepo repository.JobsRepository) 
 	}
 }
 
+// WithSSHKeys lets the handler reject jobs that reference another user's SSH key.
+func (j *JobHandler) WithSSHKeys(keys repository.SSHKeyRepository) *JobHandler {
+	j.SSHKeys = keys
+	return j
+}
+
+// ownsSSHKey reports whether the SSH key (if any) belongs to the user.
+func (j *JobHandler) ownsSSHKey(r *http.Request, userID, keyID string) (bool, error) {
+	if keyID == "" || j.SSHKeys == nil {
+		return true, nil
+	}
+	key, err := j.SSHKeys.GetByID(r.Context(), keyID)
+	if errors.Is(err, repository.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return key.UserID == userID, nil
+}
+
 // WithRepositories enables the repository-scoped job routes.
 func (j *JobHandler) WithRepositories(repos repository.RepositoryRepository, orgs repository.OrganizationRepository) *JobHandler {
 	j.Repos = repos
@@ -85,6 +107,13 @@ func (j *JobHandler) CreateJob(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(appcontext.UserIDKey).(string)
 	if !ok {
 		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	}
+	if owned, err := j.ownsSSHKey(r, userID, req.SSHKeyID); err != nil {
+		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	} else if !owned {
+		response.WriteJSONError(w, http.StatusBadRequest, "ssh key not found")
 		return
 	}
 	job := models.Job{
@@ -403,6 +432,13 @@ func (j *JobHandler) CreateRepoJob(w http.ResponseWriter, r *http.Request) {
 	req := CreateJobRequest{CloneURL: repo.Repo, SSHKeyID: body.SSHKeyID, Steps: body.Steps}
 	if err := req.Validate(); err != nil {
 		response.WriteJSONError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if owned, err := j.ownsSSHKey(r, userID, req.SSHKeyID); err != nil {
+		response.WriteJSONError(w, http.StatusInternalServerError, "internal server error")
+		return
+	} else if !owned {
+		response.WriteJSONError(w, http.StatusBadRequest, "ssh key not found")
 		return
 	}
 	j.JobWorker.JobQueue <- models.Job{
