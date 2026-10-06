@@ -112,7 +112,7 @@ func (w *Worker) executeJob(job models.Job) {
 	repoName := path.Base(repoURL)
 	repoDir := filepath.Join(dir, strings.TrimSuffix(repoName, ".git"))
 	cmdClone := exec.CommandContext(ctx, "git", "clone", repoURL)
-	cmdClone.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+	cmdClone.Env = append(jobEnv(), "GIT_TERMINAL_PROMPT=0")
 	if job.SSHKeyID != "" {
 		key, err := w.SSHkeyRepo.GetByID(ctx, job.SSHKeyID)
 		if err != nil {
@@ -164,6 +164,7 @@ func (w *Worker) executeJob(job models.Job) {
 		log.Printf("[INFO] step [%s] running: job [%s]", step.Name, job.ID)
 		cmd := exec.CommandContext(ctx, program, args...)
 		cmd.Dir = repoDir
+		cmd.Env = jobEnv()
 		output, err := cmd.CombinedOutput()
 		if workerDebugLogsEnabled {
 			log.Printf("[DEBUG] step [%s] output for job [%s]: %s", step.Name, job.ID, strings.TrimSpace(string(output)))
@@ -357,4 +358,17 @@ func (w *Worker) zipDirectory(sourceDir, zipPath string) error {
 		return fmt.Errorf("close artifact zip file: %w", closeFileErr)
 	}
 	return nil
+}
+
+// jobEnv returns the environment given to git and pipeline steps.
+// It is built from an allowlist so that server secrets (JWT_SECRET,
+// ENCRYPTION_KEY, DATABASE_URL, ...) never reach user-provided commands.
+func jobEnv() []string {
+	env := []string{"CI=true"}
+	for _, key := range []string{"PATH", "HOME", "LANG", "TMPDIR", "GOPATH", "GOCACHE", "GOMODCACHE"} {
+		if value, ok := os.LookupEnv(key); ok {
+			env = append(env, key+"="+value)
+		}
+	}
+	return env
 }
