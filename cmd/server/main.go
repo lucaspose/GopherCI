@@ -14,6 +14,7 @@ import (
 	"github.com/lucaspose/goci/internal/db"
 	"github.com/lucaspose/goci/internal/db/repository"
 	"github.com/lucaspose/goci/internal/worker"
+	"golang.org/x/time/rate"
 )
 
 func main() {
@@ -64,17 +65,14 @@ func main() {
 		log.Fatal("ENCRYPTION_KEY need to be 32 bytes length")
 	}
 	githubClientID := os.Getenv("GITHUB_CLIENT_ID")
-	if githubClientID == "" {
-		log.Fatal("GITHUB_CLIENT_ID is not set")
-	}
 	githubClientSecret := os.Getenv("GITHUB_CLIENT_SECRET")
-	if githubClientSecret == "" {
-		log.Fatal("GITHUB_CLIENT_SECRET is not set")
-	}
 	githubRedirectURL := os.Getenv("GITHUB_REDIRECT_URL")
-	if githubRedirectURL == "" {
-		log.Fatal("GITHUB_REDIRECT_URL is not set")
+	githubEnabled := githubClientID != "" && githubClientSecret != "" && githubRedirectURL != ""
+	if !githubEnabled {
+		log.Println("GitHub OAuth disabled: set GITHUB_CLIENT_ID, GITHUB_CLIENT_SECRET and GITHUB_REDIRECT_URL to enable it")
 	}
+	rateLimit := envInt("RATE_LIMIT_RPS", 10)
+	rateBurst := envInt("RATE_LIMIT_BURST", 20)
 
 	// Secret
 	accessExpiry := time.Duration(expiryInt) * time.Minute
@@ -100,7 +98,10 @@ func main() {
 	sshHandler := handler.NewSSHKeyHandler(sshRepo, encryptionKey)
 	repoHandler := handler.NewRepositoryHandler(repoRepo, orgRepo)
 	orgHandler := handler.NewOrganizationHandler(orgRepo)
-	githubHandler := handler.NewGitHubHandler(githubClientID, githubClientSecret, githubRedirectURL, userRepo, refreshTokenRepo, authService)
+	var githubHandler *handler.GitHubHandler
+	if githubEnabled {
+		githubHandler = handler.NewGitHubHandler(githubClientID, githubClientSecret, githubRedirectURL, userRepo, refreshTokenRepo, authService)
+	}
 
 	// Router
 	router := api.NewRouter(&handler.Handlers{
@@ -111,7 +112,20 @@ func main() {
 		Repo:          repoHandler,
 		Organizations: orgHandler,
 		Github:        githubHandler,
-	}, authService)
+	}, authService, rate.Limit(rateLimit), rateBurst)
 	log.Println("server running on :8080")
 	log.Fatal(http.ListenAndServe(":8080", router))
+}
+
+// envInt reads a positive integer from the environment, or returns def when unset.
+func envInt(key string, def int) int {
+	raw := os.Getenv(key)
+	if raw == "" {
+		return def
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		log.Fatalf("%s must be a positive integer", key)
+	}
+	return value
 }
